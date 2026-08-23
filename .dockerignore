@@ -1,0 +1,9 @@
+node_modules
+.npm-cache
+.docker-cli
+dist
+.env
+data
+coverage
+.git
+*.log
