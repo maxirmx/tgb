@@ -7,7 +7,6 @@ import { GitHubApiError, GitHubClient } from "./github.js";
 import {
   draftKeyboard,
   issueKeyboard,
-  projectKeyboard,
   repositoryKeyboard,
 } from "./keyboards.js";
 import { StateStore } from "./store.js";
@@ -90,99 +89,65 @@ async function startIssueFlow(ctx: Context): Promise<void> {
 
 async function startCommentFlow(ctx: Context): Promise<void> {
   if (!(await requireDraft(ctx))) return;
-  await ctx.reply("Loading GitHub Projects…");
-  const projects = await github.listProjects();
-  if (projects.length === 0) {
-    await ctx.reply(
-      "No accessible GitHub Projects were found. Check that the token has Projects read access.",
-    );
+  await ctx.reply("Loading repositories…");
+  const repositories = await github.listRepositories();
+  if (repositories.length === 0) {
+    await ctx.reply("No writable repositories with Issues enabled were found.");
     return;
   }
 
   const flow: PendingFlow = {
     id: flowId(),
     type: "comment",
-    stage: "project",
-    projects,
+    stage: "repository",
+    repositories,
   };
   await store.updateUser(ctx.from!.id, (state) => {
     state.flow = flow;
   });
-  await ctx.reply("Choose the Project containing the issue:", {
-    reply_markup: projectKeyboard(projects, flow.id, config.pageSize).keyboard,
+  await ctx.reply("Choose the repository containing the issue:", {
+    reply_markup: repositoryKeyboard(repositories, flow.id, config.pageSize).keyboard,
   });
 }
 
 async function chooseRepository(ctx: Context, id: string, index: number): Promise<void> {
   const state = await store.getUser(ctx.from!.id);
   const flow = state.flow;
-  if (!flow || flow.id !== id || flow.type !== "issue" || flow.stage !== "repository") {
+  if (!flow || flow.id !== id || flow.stage !== "repository") {
     await ctx.reply("That selection has expired. Start again from the draft buttons.");
     return;
   }
   const repository = flow.repositories?.[index];
   if (!repository) return;
 
-  const projects = await github.listProjects();
-  await store.updateUser(ctx.from!.id, (user) => {
-    if (!user.flow || user.flow.id !== id) return;
-    user.flow.stage = "project";
-    user.flow.selectedRepository = repository.nameWithOwner;
-    user.flow.projects = projects;
-  });
-
-  await ctx.reply(`Repository: ${repository.nameWithOwner}\nChoose a Project:`, {
-    reply_markup: projectKeyboard(projects, id, config.pageSize, 0, true).keyboard,
-  });
-}
-
-async function askForIssueTitle(ctx: Context, id: string, projectIndex?: number): Promise<void> {
-  const state = await store.getUser(ctx.from!.id);
-  const flow = state.flow;
-  if (!flow || flow.id !== id || flow.type !== "issue" || flow.stage !== "project") {
-    await ctx.reply("That selection has expired. Start again from the draft buttons.");
+  if (flow.type === "issue") {
+    await store.updateUser(ctx.from!.id, (user) => {
+      if (!user.flow || user.flow.id !== id) return;
+      user.flow.stage = "title";
+      user.flow.selectedRepository = repository.nameWithOwner;
+    });
+    await ctx.reply(
+      `Repository: ${repository.nameWithOwner}\nSend the issue title as your next message.`,
+      { reply_markup: { force_reply: true, selective: true } },
+    );
     return;
   }
-  const project = projectIndex === undefined ? null : flow.projects?.[projectIndex];
-  if (projectIndex !== undefined && !project) return;
 
-  await store.updateUser(ctx.from!.id, (user) => {
-    if (!user.flow || user.flow.id !== id) return;
-    user.flow.stage = "title";
-    user.flow.selectedProject = project;
-  });
-
-  const destination = project ? `${project.owner} · ${project.title}` : "no Project";
-  await ctx.reply(`Selected ${destination}. Send the issue title as your next message.`, {
-    reply_markup: { force_reply: true, selective: true },
-  });
-}
-
-async function chooseCommentProject(ctx: Context, id: string, index: number): Promise<void> {
-  const state = await store.getUser(ctx.from!.id);
-  const flow = state.flow;
-  if (!flow || flow.id !== id || flow.type !== "comment" || flow.stage !== "project") {
-    await ctx.reply("That selection has expired. Start again from the draft buttons.");
-    return;
-  }
-  const project = flow.projects?.[index];
-  if (!project) return;
-
-  await ctx.reply("Loading open issues from the Project…");
-  const issues = await github.listProjectIssues(project.id);
+  await ctx.reply("Loading open issues from the repository…");
+  const issues = await github.listRepositoryIssues(repository.nameWithOwner);
   if (issues.length === 0) {
-    await ctx.reply("This Project contains no visible open issues.");
+    await ctx.reply("This repository contains no visible open issues.");
     return;
   }
 
   await store.updateUser(ctx.from!.id, (user) => {
     if (!user.flow || user.flow.id !== id) return;
     user.flow.stage = "issue";
-    user.flow.selectedProject = project;
+    user.flow.selectedRepository = repository.nameWithOwner;
     user.flow.issues = issues;
   });
 
-  await ctx.reply(`Project: ${project.owner} · ${project.title}\nChoose the issue:`, {
+  await ctx.reply(`Repository: ${repository.nameWithOwner}\nChoose the issue:`, {
     reply_markup: issueKeyboard(issues, id, config.pageSize).keyboard,
   });
 }
@@ -205,17 +170,8 @@ async function createIssueFromTitle(ctx: Context, title: string): Promise<void> 
   const body = formatDraft(state.draft, config.messageBodyLimit);
   const issue = await github.createIssue(flow.selectedRepository, cleanTitle, body);
 
-  let projectWarning = "";
-  if (flow.selectedProject) {
-    try {
-      await github.addIssueToProject(flow.selectedProject.id, issue.nodeId);
-    } catch (error) {
-      projectWarning = `\n\nThe issue was created, but adding it to the Project failed: ${errorText(error)}`;
-    }
-  }
-
   await store.clear(userId);
-  await ctx.reply(`Created ${issue.repository} #${issue.number}:\n${issue.url}${projectWarning}`);
+  await ctx.reply(`Created ${issue.repository} #${issue.number}:\n${issue.url}`);
 }
 
 async function createCommentForIssue(ctx: Context, id: string, index: number): Promise<void> {
@@ -247,16 +203,6 @@ async function showPage(ctx: Context, kind: string, id: string, page: number): P
   if (kind === "repo" && flow.repositories) {
     await ctx.editMessageReplyMarkup({
       reply_markup: repositoryKeyboard(flow.repositories, id, config.pageSize, page).keyboard,
-    });
-  } else if (kind === "project" && flow.projects) {
-    await ctx.editMessageReplyMarkup({
-      reply_markup: projectKeyboard(
-        flow.projects,
-        id,
-        config.pageSize,
-        page,
-        flow.type === "issue",
-      ).keyboard,
     });
   } else if (kind === "issue" && flow.issues) {
     await ctx.editMessageReplyMarkup({
@@ -341,29 +287,6 @@ bot.callbackQuery(/^repo:([a-f0-9]+):(\d+)$/, async (ctx) => {
   try {
     await chooseRepository(ctx, ctx.match[1], Number(ctx.match[2]));
   } catch (error) {
-    await ctx.reply(`Could not load Projects: ${errorText(error)}`);
-  }
-});
-
-bot.callbackQuery(/^project:([a-f0-9]+):(\d+)$/, async (ctx) => {
-  await ctx.answerCallbackQuery();
-  try {
-    const state = await store.getUser(ctx.from.id);
-    if (state.flow?.type === "issue") {
-      await askForIssueTitle(ctx, ctx.match[1], Number(ctx.match[2]));
-    } else {
-      await chooseCommentProject(ctx, ctx.match[1], Number(ctx.match[2]));
-    }
-  } catch (error) {
-    await ctx.reply(`Could not continue: ${errorText(error)}`);
-  }
-});
-
-bot.callbackQuery(/^none:([a-f0-9]+)$/, async (ctx) => {
-  await ctx.answerCallbackQuery();
-  try {
-    await askForIssueTitle(ctx, ctx.match[1]);
-  } catch (error) {
     await ctx.reply(`Could not continue: ${errorText(error)}`);
   }
 });
@@ -377,7 +300,7 @@ bot.callbackQuery(/^issue:([a-f0-9]+):(\d+)$/, async (ctx) => {
   }
 });
 
-bot.callbackQuery(/^nav:(repo|project|issue):([a-f0-9]+):(\d+)$/, async (ctx) => {
+bot.callbackQuery(/^nav:(repo|issue):([a-f0-9]+):(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   try {
     await showPage(ctx, ctx.match[1], ctx.match[2], Number(ctx.match[3]));

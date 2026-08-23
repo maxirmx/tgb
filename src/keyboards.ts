@@ -1,6 +1,6 @@
 import { InlineKeyboard } from "grammy";
 import { shorten } from "./format.js";
-import type { IssueRef, ProjectRef, RepositoryRef } from "./types.js";
+import type { IssueRef, RepositoryRef } from "./types.js";
 
 export function draftKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
@@ -21,10 +21,9 @@ function paginatedKeyboard<T>(options: {
   page: number;
   pageSize: number;
   flowId: string;
-  kind: "repo" | "project" | "issue";
+  kind: "repo" | "issue";
   label: (value: T) => string;
   callbackPrefix: string;
-  includeNone?: boolean;
 }): PageResult {
   const pages = Math.max(1, Math.ceil(options.values.length / options.pageSize));
   const page = Math.min(Math.max(0, options.page), pages - 1);
@@ -35,10 +34,6 @@ function paginatedKeyboard<T>(options: {
     const index = start + localIndex;
     keyboard.text(shorten(options.label(value), 54), `${options.callbackPrefix}:${options.flowId}:${index}`).row();
   });
-
-  if (options.includeNone && page === 0) {
-    keyboard.text("No project", `none:${options.flowId}`).row();
-  }
 
   if (pages > 1) {
     if (page > 0) keyboard.text("‹ Previous", `nav:${options.kind}:${options.flowId}:${page - 1}`);
@@ -67,25 +62,6 @@ export function repositoryKeyboard(
   });
 }
 
-export function projectKeyboard(
-  projects: ProjectRef[],
-  flowId: string,
-  pageSize: number,
-  page = 0,
-  includeNone = false,
-): PageResult {
-  return paginatedKeyboard({
-    values: projects,
-    page,
-    pageSize,
-    flowId,
-    kind: "project",
-    callbackPrefix: "project",
-    label: (project) => `${project.owner} · ${project.title}`,
-    includeNone,
-  });
-}
-
 export function issueKeyboard(
   issues: IssueRef[],
   flowId: string,
@@ -99,6 +75,6 @@ export function issueKeyboard(
     flowId,
     kind: "issue",
     callbackPrefix: "issue",
-    label: (issue) => `${issue.repository} #${issue.number} · ${issue.title}`,
+    label: (issue) => `#${issue.number} · ${issue.title}`,
   });
 }

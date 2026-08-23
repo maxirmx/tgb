@@ -10,13 +10,6 @@ export interface RepositoryRef {
   nameWithOwner: string;
 }
 
-export interface ProjectRef {
-  id: string;
-  number: number;
-  title: string;
-  owner: string;
-}
-
 export interface IssueRef {
   nodeId: string;
   number: number;
@@ -26,17 +19,15 @@ export interface IssueRef {
 }
 
 export type FlowType = "issue" | "comment";
-export type FlowStage = "repository" | "project" | "issue" | "title";
+export type FlowStage = "repository" | "issue" | "title";
 
 export interface PendingFlow {
   id: string;
   type: FlowType;
   stage: FlowStage;
   repositories?: RepositoryRef[];
-  projects?: ProjectRef[];
   issues?: IssueRef[];
   selectedRepository?: string;
-  selectedProject?: ProjectRef | null;
 }
 
 export interface UserState {

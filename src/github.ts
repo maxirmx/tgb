@@ -1,7 +1,6 @@
 import type {
   CreatedIssue,
   IssueRef,
-  ProjectRef,
   RepositoryRef,
 } from "./types.js";
 
@@ -39,108 +38,26 @@ export class GitHubClient {
       .map((repository) => ({ nameWithOwner: repository.full_name }));
   }
 
-  async listProjects(): Promise<ProjectRef[]> {
-    const query = `
-      query AccessibleProjects {
-        viewer {
-          login
-          projectsV2(first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) {
-            nodes { id number title }
-          }
-          organizations(first: 50) {
-            nodes {
-              login
-              projectsV2(first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) {
-                nodes { id number title }
-              }
-            }
-          }
-        }
-      }
-    `;
+  async listRepositoryIssues(repository: string): Promise<IssueRef[]> {
+    const endpoint = `${this.repositoryEndpoint(repository)}/issues?state=open&per_page=100`;
+    const issues = await this.request<
+      Array<{
+        node_id: string;
+        number: number;
+        title: string;
+        html_url: string;
+        pull_request?: unknown;
+      }>
+    >(endpoint);
 
-    type ProjectNode = { id: string; number: number; title: string };
-    interface ProjectData {
-      viewer: {
-        login: string;
-        projectsV2: { nodes: ProjectNode[] };
-        organizations: {
-          nodes: Array<{ login: string; projectsV2: { nodes: ProjectNode[] } }>;
-        };
-      };
-    }
-
-    const data = await this.graphql<ProjectData>(query);
-    const projects: ProjectRef[] = data.viewer.projectsV2.nodes.map((project) => ({
-      ...project,
-      owner: data.viewer.login,
-    }));
-
-    for (const organization of data.viewer.organizations.nodes) {
-      projects.push(
-        ...organization.projectsV2.nodes.map((project) => ({
-          ...project,
-          owner: organization.login,
-        })),
-      );
-    }
-
-    return projects;
-  }
-
-  async listProjectIssues(projectId: string): Promise<IssueRef[]> {
-    const query = `
-      query ProjectIssues($projectId: ID!) {
-        node(id: $projectId) {
-          ... on ProjectV2 {
-            items(first: 100) {
-              nodes {
-                content {
-                  ... on Issue {
-                    id
-                    number
-                    title
-                    url
-                    state
-                    repository { nameWithOwner }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    `;
-
-    interface ProjectIssueData {
-      node: null | {
-        items: {
-          nodes: Array<{
-            content?: {
-              id: string;
-              number: number;
-              title: string;
-              url: string;
-              state: "OPEN" | "CLOSED";
-              repository: { nameWithOwner: string };
-            };
-          }>;
-        };
-      };
-    }
-
-    const data = await this.graphql<ProjectIssueData>(query, { projectId });
-    if (!data.node) return [];
-
-    return data.node.items.nodes
-      .map((item) => item.content)
-      .filter((issue): issue is NonNullable<typeof issue> => issue?.state === "OPEN")
+    return issues
+      .filter((issue) => !issue.pull_request)
       .map((issue) => ({
-        nodeId: issue.id,
+        nodeId: issue.node_id,
         number: issue.number,
         title: issue.title,
-        url: issue.url,
-        repository: issue.repository.nameWithOwner,
+        url: issue.html_url,
+        repository,
       }));
   }
 
@@ -165,17 +82,6 @@ export class GitHubClient {
     };
   }
 
-  async addIssueToProject(projectId: string, issueNodeId: string): Promise<void> {
-    const mutation = `
-      mutation AddIssueToProject($projectId: ID!, $contentId: ID!) {
-        addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
-          item { id }
-        }
-      }
-    `;
-    await this.graphql(mutation, { projectId, contentId: issueNodeId });
-  }
-
   async createComment(repository: string, issueNumber: number, body: string): Promise<string> {
     const endpoint = `${this.repositoryEndpoint(repository)}/issues/${issueNumber}/comments`;
     const comment = await this.request<{ html_url: string }>(endpoint, {
@@ -191,22 +97,6 @@ export class GitHubClient {
       throw new GitHubApiError(`Invalid repository name: ${repository}`);
     }
     return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
-  }
-
-  private async graphql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
-    const response = await this.request<{
-      data?: T;
-      errors?: Array<{ message: string }>;
-    }>("https://api.github.com/graphql", {
-      method: "POST",
-      body: JSON.stringify({ query, variables }),
-    });
-
-    if (response.errors?.length) {
-      throw new GitHubApiError(response.errors.map((error) => error.message).join("; "));
-    }
-    if (!response.data) throw new GitHubApiError("GitHub GraphQL returned no data");
-    return response.data;
   }
 
   private async request<T>(url: string, init: RequestInit = {}): Promise<T> {
