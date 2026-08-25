@@ -32,6 +32,37 @@ describe("formatDraft", () => {
     expect(result.length).toBeLessThanOrEqual(180);
     expect(result).toContain("truncated");
   });
+
+  it("embeds uploaded images beside their Telegram message", () => {
+    const result = formatDraft(
+      [{ telegramMessageId: 7, text: "A screenshot", receivedAt: new Date().toISOString() }],
+      60_000,
+      [
+        {
+          telegramMessageId: 7,
+          url: "https://github.com/acme/repo/blob/main/image.png?raw=1",
+          alt: "screen.png",
+        },
+      ],
+    );
+
+    expect(result).toContain(
+      "![screen.png](https://github.com/acme/repo/blob/main/image.png?raw=1)",
+    );
+  });
+
+  it("preserves complete image links when message text is truncated", () => {
+    const imageUrl = "https://github.com/acme/repo/blob/main/image.png?raw=1";
+    const result = formatDraft(
+      [{ telegramMessageId: 7, text: "x".repeat(1_000), receivedAt: new Date().toISOString() }],
+      300,
+      [{ telegramMessageId: 7, url: imageUrl, alt: "image.png" }],
+    );
+
+    expect(result.length).toBeLessThanOrEqual(300);
+    expect(result).toContain(`![image.png](${imageUrl})`);
+    expect(result).toContain("truncated");
+  });
 });
 
 describe("shorten", () => {
