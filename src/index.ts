@@ -4,6 +4,7 @@ import type { Context } from "grammy";
 import { config } from "./config.js";
 import { formatDraft, shorten } from "./format.js";
 import { GitHubApiError, GitHubClient } from "./github.js";
+import { countDraftImages, uploadDraftImages } from "./images.js";
 import {
   draftKeyboard,
   issueKeyboard,
@@ -92,7 +93,7 @@ async function startCommentFlow(ctx: Context): Promise<void> {
   await ctx.reply("Loading repositories…");
   const repositories = await github.listRepositories();
   if (repositories.length === 0) {
-    await ctx.reply("No writable repositories with Issues enabled were found.");
+    await ctx.reply("No accessible repositories with Issues enabled were found.");
     return;
   }
 
@@ -152,6 +153,26 @@ async function chooseRepository(ctx: Context, id: string, index: number): Promis
   });
 }
 
+async function buildDraftBody(
+  ctx: Context,
+  repository: string,
+  state: UserState,
+): Promise<string> {
+  const count = countDraftImages(state.draft);
+  if (!count) return formatDraft(state.draft, config.messageBodyLimit);
+
+  await ctx.reply(`Uploading ${count} image${count === 1 ? "" : "s"}…`);
+  const images = await uploadDraftImages({
+    telegramApi: bot.api,
+    telegramBotToken: config.telegramBotToken,
+    github,
+    repository,
+    messages: state.draft,
+    maxBytes: config.imageMaxBytes,
+  });
+  return formatDraft(state.draft, config.messageBodyLimit, images);
+}
+
 async function createIssueFromTitle(ctx: Context, title: string): Promise<void> {
   const userId = ctx.from!.id;
   const state = await store.getUser(userId);
@@ -166,8 +187,8 @@ async function createIssueFromTitle(ctx: Context, title: string): Promise<void> 
     return;
   }
 
+  const body = await buildDraftBody(ctx, flow.selectedRepository, state);
   await ctx.reply("Creating the GitHub issue…");
-  const body = formatDraft(state.draft, config.messageBodyLimit);
   const issue = await github.createIssue(flow.selectedRepository, cleanTitle, body);
 
   await store.clear(userId);
@@ -185,8 +206,8 @@ async function createCommentForIssue(ctx: Context, id: string, index: number): P
   const issue = flow.issues?.[index];
   if (!issue) return;
 
+  const body = await buildDraftBody(ctx, issue.repository, state);
   await ctx.reply(`Adding a comment to ${issue.repository} #${issue.number}…`);
-  const body = formatDraft(state.draft, config.messageBodyLimit);
   const url = await github.createComment(issue.repository, issue.number, body);
   await store.clear(userId);
   await ctx.reply(`Comment created:\n${url}`);
@@ -330,7 +351,9 @@ bot.on("message", async (ctx) => {
 
   const draftMessage = toDraftMessage(ctx.message);
   if (!draftMessage) {
-    await ctx.reply("This first version supports text, captions, and media placeholders only.");
+    await ctx.reply(
+      "This version supports text, captions, photos, image documents, and common media placeholders.",
+    );
     return;
   }
   const count = await store.addDraftMessage(ctx.from.id, draftMessage);

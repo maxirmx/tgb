@@ -1,9 +1,24 @@
+export interface DraftImage {
+  fileId: string;
+  fileUniqueId: string;
+  fileName?: string;
+  mimeType?: string;
+  fileSize?: number;
+}
+
 export interface DraftMessage {
   telegramMessageId: number;
   text: string;
+  images?: DraftImage[];
   source?: string;
   originalDate?: string;
   receivedAt: string;
+}
+
+export interface EmbeddedImage {
+  telegramMessageId: number;
+  url: string;
+  alt: string;
 }
 
 export interface RepositoryRef {

@@ -1,5 +1,5 @@
-import type { Message } from "grammy/types";
-import type { DraftMessage } from "./types.js";
+import type { Document, Message, PhotoSize } from "grammy/types";
+import type { DraftImage, DraftMessage } from "./types.js";
 
 type AnyMessage = Message & Record<string, unknown>;
 
@@ -15,6 +15,39 @@ function mediaDescription(message: AnyMessage): string | undefined {
     return document?.file_name ? `[Document: ${document.file_name}]` : "[Document]";
   }
   return undefined;
+}
+
+function messageImages(message: AnyMessage): DraftImage[] {
+  const photos = message.photo as PhotoSize[] | undefined;
+  if (photos?.length) {
+    const largest = photos.reduce((best, photo) =>
+      photo.width * photo.height > best.width * best.height ? photo : best,
+    );
+    return [
+      {
+        fileId: largest.file_id,
+        fileUniqueId: largest.file_unique_id,
+        fileName: `${largest.file_unique_id}.jpg`,
+        mimeType: "image/jpeg",
+        fileSize: largest.file_size,
+      },
+    ];
+  }
+
+  const document = message.document as Document | undefined;
+  if (document?.mime_type?.toLowerCase().startsWith("image/")) {
+    return [
+      {
+        fileId: document.file_id,
+        fileUniqueId: document.file_unique_id,
+        fileName: document.file_name,
+        mimeType: document.mime_type,
+        fileSize: document.file_size,
+      },
+    ];
+  }
+
+  return [];
 }
 
 function forwardedSource(message: AnyMessage): { source?: string; originalDate?: string } {
@@ -57,6 +90,7 @@ export function isForwardedMessage(message: Message): boolean {
 
 export function toDraftMessage(message: Message): DraftMessage | null {
   const anyMessage = message as AnyMessage;
+  const images = messageImages(anyMessage);
   const text =
     ("text" in anyMessage ? String(anyMessage.text) : undefined) ||
     ("caption" in anyMessage ? String(anyMessage.caption) : undefined) ||
@@ -67,6 +101,7 @@ export function toDraftMessage(message: Message): DraftMessage | null {
   return {
     telegramMessageId: message.message_id,
     text,
+    ...(images.length ? { images } : {}),
     ...forwarded,
     receivedAt: new Date(message.date * 1000).toISOString(),
   };

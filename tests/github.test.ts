@@ -48,3 +48,88 @@ describe("GitHubClient.listRepositoryIssues", () => {
     );
   });
 });
+
+describe("GitHubClient.uploadImage", () => {
+  it("creates a release asset and returns its download URL", async () => {
+    const imageClient = new GitHubClient({ token: "test-token", apiVersion: "2022-11-28" });
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/releases/tags/issue-images")) {
+        return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
+      }
+      if (url.endsWith("/releases") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            id: 77,
+            upload_url: "https://uploads.github.com/repos/acme/bridge/releases/77/assets{?name,label}",
+          }),
+          { status: 201 },
+        );
+      }
+      if (url.includes("/releases/77/assets?per_page=")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          name: "image.png",
+          state: "uploaded",
+          browser_download_url:
+            "https://github.com/acme/bridge/releases/download/issue-images/image.png",
+        }),
+        { status: 201 },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      imageClient.uploadImage("acme/bridge", "image.png", Uint8Array.from([1, 2, 3]), "image/png"),
+    ).resolves.toBe("https://github.com/acme/bridge/releases/download/issue-images/image.png");
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const createReleaseRequest = fetchMock.mock.calls[1]?.[1];
+    expect(JSON.parse(String(createReleaseRequest?.body))).toMatchObject({
+      tag_name: "issue-images",
+      draft: false,
+      prerelease: true,
+    });
+    const uploadRequest = fetchMock.mock.calls[3]?.[1];
+    expect(uploadRequest?.method).toBe("POST");
+    expect(uploadRequest?.headers).toMatchObject({ "Content-Type": "image/png" });
+    expect(Buffer.from(uploadRequest?.body as Uint8Array).toString("base64")).toBe("AQID");
+  });
+
+  it("reuses an existing release asset", async () => {
+    const imageClient = new GitHubClient({ token: "test-token", apiVersion: "2022-11-28" });
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/releases/tags/issue-images")) {
+        return new Response(
+          JSON.stringify({
+            id: 77,
+            upload_url: "https://uploads.github.com/repos/acme/bridge/releases/77/assets{?name,label}",
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(
+        JSON.stringify([
+          {
+            name: "existing.jpg",
+            state: "uploaded",
+            browser_download_url:
+              "https://github.com/acme/bridge/releases/download/issue-images/existing.jpg",
+          },
+        ]),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      imageClient.uploadImage("acme/bridge", "existing.jpg", Uint8Array.from([1]), "image/jpeg"),
+    ).resolves.toBe(
+      "https://github.com/acme/bridge/releases/download/issue-images/existing.jpg",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});

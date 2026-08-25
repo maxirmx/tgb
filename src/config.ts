@@ -33,4 +33,5 @@ export const config = {
   dataFile: process.env.DATA_FILE?.trim() || "./data/state.json",
   pageSize: positiveInteger("LIST_PAGE_SIZE", 8),
   messageBodyLimit: positiveInteger("MESSAGE_BODY_LIMIT", 60_000),
+  imageMaxBytes: positiveInteger("IMAGE_MAX_BYTES", 20_000_000),
 };
