@@ -132,5 +132,5 @@ Run the published image with the same `.env` file used by Compose:
 
 ```sh
 docker pull ghcr.io/maxirmx/tgb:latest
-docker run --rm --name tgb --env-file .env -v tgb-data:/data ghcr.io/maxirmx/tgb:latest
+docker run --rm --name tgb --env-file .env -v bridge-data:/data ghcr.io/maxirmx/tgb:latest
 ```
