@@ -120,3 +120,17 @@ npm run lint
 npm test
 npm run build
 ```
+
+## Published container
+
+Version tags matching `v*` publish AMD64 images to the GitHub Container Registry.
+For example, tag `v1.2.3` publishes `1.2.3`, `1.2`, `1`, `latest`, and
+a commit-SHA tag at `ghcr.io/maxirmx/tgb`. A manually dispatched publish workflow
+builds and verifies the image without pushing it.
+
+Run the published image with the same `.env` file used by Compose:
+
+```sh
+docker pull ghcr.io/maxirmx/tgb:latest
+docker run --rm --name tgb --env-file .env -v bridge-data:/data ghcr.io/maxirmx/tgb:latest
+```

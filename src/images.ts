@@ -1,3 +1,7 @@
+// Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+// All rights reserved.
+// This file is a part of the tgb application
+
 import { createHash } from "node:crypto";
 import { extname } from "node:path";
 import type { DraftImage, DraftMessage, EmbeddedImage } from "./types.js";

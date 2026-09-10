@@ -1,3 +1,7 @@
+// Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+// All rights reserved.
+// This file is a part of the tgb application
+
 import { InlineKeyboard } from "grammy";
 import { shorten } from "./format.js";
 import type { IssueRef, RepositoryRef } from "./types.js";

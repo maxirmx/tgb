@@ -1,3 +1,7 @@
+// Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+// All rights reserved.
+// This file is a part of the tgb application
+
 import { describe, expect, it } from "vitest";
 import { formatDraft, shorten } from "../src/format.js";
 
