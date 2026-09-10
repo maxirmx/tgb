@@ -52,7 +52,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-
+      actions: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
