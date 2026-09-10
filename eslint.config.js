@@ -1,3 +1,7 @@
+// Copyright (C) 2026 Maxim [maxirmx] Samsonov (www.sw.consulting)
+// All rights reserved.
+// This file is a part of the tgb application
+
 import eslint from "@eslint/js";
 import globals from "globals";
 import tseslint from "typescript-eslint";
